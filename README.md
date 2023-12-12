@@ -1,5 +1,7 @@
 # epub_ingestion_python
 
+e.g. Use epub books from Humble Bunbles in Retrieval Augmented Generation systems with Foundation Models.
+
 ```python
 #########################################################
 # This block automaticaly finds and processes epub books
