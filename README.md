@@ -4,16 +4,23 @@ e.g. Use epub books from Humble Bunbles in Retrieval Augmented Generation system
 
 ```python
 #########################################################
-# This block automaticaly finds and processes epub books
+# This code automaticaly finds and processes epub books
 # esspecially for RAG document ingestion processing
 #########################################################
+"""
+# Set of Results:
+1. One jsonl file
+2. Individual json files in a folder
+3. One .txt text file of the whole epub
+4. Individual txt files from separate parts of epub
+"""
 
 import zipfile
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import json
 import os
-import glob
+import shutil
 
 
 def get_ordered_html_files(opf_content):
@@ -59,6 +66,13 @@ def get_ordered_html_files(opf_content):
     return ordered_html_files
 
 
+# def extract_text_from_html(html_content):
+#     """
+#     Extracts and returns text from an HTML content.
+#     """
+#     soup = BeautifulSoup(html_content, 'html.parser')
+#     return soup.get_text()
+
 def extract_text_from_html(html_content):
     """
     Extracts and returns text from an HTML content.
@@ -73,74 +87,102 @@ def extract_text_from_html(html_content):
 
     return parsed_text
 
+def fix_text_formatting(text):
+    """Replaces the Unicode right single quotation mark with a standard apostrophe."""
+    return text.replace("\u2019", "'")
 
-def extract_text_from_epub(epub_path, output_jsonl_path, output_json_dir):
-    """
-    Extracts text from an EPUB file, writes it to a single JSONL file, and creates individual JSON files for each HTML content.
 
-    Args:
-    epub_path (str): Path to the EPUB file.
-    output_jsonl_path (str): Path for the output JSONL file that will contain all extracted text.
-    output_json_dir (str): Directory path to store individual JSON files.
-    """
-
-    with zipfile.ZipFile(epub_path, 'r') as epub:
+def extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, output_whole_txt_path, output_txt_dir):
+    with zipfile.ZipFile(epub_file_path, 'r') as epub:
         print("EPUB Contents:", epub.namelist())
 
-        # Locate and read the content.opf file for metadata
         opf_file = [f for f in epub.namelist() if 'content.opf' in f][0]
         opf_content = epub.read(opf_file).decode('utf-8')
 
-        # Get an ordered list of HTML files based on EPUB structure
         ordered_html_files = get_ordered_html_files(opf_content)
 
-        # Create a directory for individual JSON files if it doesn't exist
+        # Create a directory for individual JSON files
         if not os.path.exists(output_json_dir):
             os.makedirs(output_json_dir)
 
+        # Create a directory for individual txt files
+        if not os.path.exists(output_txt_dir):
+            os.makedirs(output_txt_dir)
+
+        # Read and extract text from each HTML file
         for html_file in ordered_html_files:
             full_path = os.path.join(os.path.dirname(opf_file), html_file)
             if full_path in epub.namelist():
-                # Read and extract text from each HTML file
                 html_content = epub.read(full_path).decode('utf-8')
-                text = extract_text_from_html(html_content)
-                print(f"len(text for json)-> {len(text)}")
 
-                # Append the extracted text to a single JSONL file
+                #########################
+                # extract text from epub
+                #########################
+                raw_text = extract_text_from_html(html_content)
+                print(f"len(text for json)-> {len(raw_text)}")
+                
+                # fix text formatting
+                text = fix_text_formatting(raw_text)
+
+                # Write/Append to a single JSONL file
                 with open(output_jsonl_path, 'a') as f:
                     json_record = json.dumps({'text': text.strip()})
                     f.write(json_record + '\n')
 
-                # Create an individual JSON file for each HTML file
+                # Save individual JSON file
                 individual_json_path = os.path.join(output_json_dir, f"{os.path.splitext(html_file)[0]}.json")
                 with open(individual_json_path, 'w') as f:
                     json.dump({'text': text.strip()}, f, indent=4)
 
+                # Write/Append to a single text .txt file
+                with open(output_whole_txt_path, 'a') as f:
+                    f.write(text + '\n\n')
+
+                # Save individual txt files
+                individual_txt_path = os.path.join(output_txt_dir, f"{os.path.splitext(html_file)[0]}.txt")
+                with open(individual_txt_path, 'w') as f:
+                    f.write(text)
+
                 print(f"{html_file} -> ok!")
+
             else:
                 print(f"Warning: File {full_path} not found in the archive.")
 
 
-def make_epub_file_list():
-    # This will match all files ending in .epub in the current directory
-    list_of_epub_files = glob.glob('*.epub')
+def zip_folder(path_to_directory_to_zip='individual_jsons', output_destination_zip_file_path='jsons_archive_zip'):
+    """Creates a zip archive of a specified folder.
 
-    # Print the list of .epub files
-    for file in list_of_epub_files:
-        print(file)
+    Args:
+        path_to_directory_to_zip (str): The path to the folder to be zipped.
+        output_destination_zip_file_path (str): The desired name and path of the output zip file.
+    """
+    # Specify the folder you want to zip
+    path_to_directory_to_zip = "individual_jsons"
 
-    return list_of_epub_files
+    # Specify the desired output zip file name (e.g., 'jsons_archive.zip')
+    output_destination_zip_file_path = "jsons_archive_zip" 
+
+    shutil.make_archive(output_destination_zip_file_path, 'zip', path_to_directory_to_zip)
 
 
-# get list of epub files
-list_of_epub_files = make_epub_file_list()
-print(f"list_of_epub_files -> {list_of_epub_files}")
-
+################
 # Example usage
-epub_file_path = list_of_epub_files[0]
-!mkdir "data"
-output_jsonl_path = 'data/output.jsonl'
+################
+epub_file_path = 'rustforrustaceans.epub' # Replace with your EPUB file path
+
+# json
+output_jsonl_path = 'output.jsonl'
 output_json_dir = 'individual_jsons' # Directory to store individual JSON files
-extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir)
+
+# txt
+output_whole_txt_path = 'whole.txt'
+output_txt_dir = 'individual_txt' # Directory to store individual txt files
+
+# run 
+extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, output_whole_txt_path, output_txt_dir)
+
+# Call the zip function
+zip_folder(output_json_dir, 'jsons_archive_zip')
+zip_folder(output_txt_dir, 'txt_archive_zip')
 
 ```
