@@ -2,6 +2,11 @@
 
 e.g. Use epub books from Humble Bunbles in Retrieval Augmented Generation systems with Foundation Models.
 
+# Steps
+1. add your epub files into the same current working directory as this script
+2. run script
+3. find the files in new folders per epub
+
 ```python
 #########################################################
 # This code automaticaly finds and processes epub books
