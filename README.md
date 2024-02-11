@@ -8,13 +8,15 @@ e.g. Use epub books from Humble Bunbles in Retrieval Augmented Generation system
 # esspecially for RAG document ingestion processing
 #########################################################
 """
-# Set of Results:
+# Set of Results, saved in a file per epub doc:
 1. One .jsonl file
-2. Individual .json files in a folder
+2. (Plural) Individual .json files in a folder
 3. One .txt text file of the whole epub
-4. Individual .txt files from separate parts of epub
-5. chunks under specified character length as separate text files
-6. chunks as one .jsonl file
+4. (plural) Individual .txt files from separate parts of epub
+5. chunks as one .jsonl file
+6. (Plural) chunks under specified character length as separate text
+Future Feature:
+7. Chunk-Metadata (for model training, for DB-retrieval, etc.)
 """
 
 import zipfile
@@ -68,17 +70,18 @@ def get_ordered_html_files(opf_content):
     return ordered_html_files
 
 
-def extract_text_from_html(html_content):
+def extract_text_from_html(html_content, this_epub_output_dir_path):
     """
     Extracts and returns text from an HTML content.
     """
-    #print("HTML Content before BeautifulSoup Parsing:\n", html_content[:500])  # Print first 500 characters of HTML
-    print(f"\nlen(HTML Content before BeautifulSoup Parsing) -> {len(html_content)}")  # Print first 500 characters of HTML
+    # print("HTML Content before BeautifulSoup Parsing:\n", html_content[:500])  # Print first 500 characters of HTML
+    print_and_log(f"\nlen(HTML Content before BeautifulSoup Parsing) -> {len(html_content)}", this_epub_output_dir_path)  # Print first 500 characters of HTML
+
 
     soup = BeautifulSoup(html_content, 'html.parser')
     parsed_text = soup.get_text()
     # print("Extracted Text:\n", parsed_text[:500])  # Print first 500 characters of extracted text
-    print(f"len(Extracted Text) -> {len(parsed_text)}")  # Print first 500 characters of extracted text
+    print_and_log(f"len(Extracted Text) -> {len(parsed_text)}", this_epub_output_dir_path)  # Print first 500 characters of extracted text
 
     return parsed_text
 
@@ -87,18 +90,46 @@ def fix_text_formatting(text):
     return text.replace("\u2019", "'")
 
 
+def check_len_chunks_in_list(chunks_list, max_chunk_size, this_epub_output_dir_path):
+
+    size_flag_ok = True
+
+    for index, this_chunk in enumerate(chunks_list):
+
+        # get size of chunk
+        this_length = len( this_chunk )
+
+        # check size against user-input max size
+        if this_length > max_chunk_size:
+            print_and_log( this_length, this_epub_output_dir_path )
+            print_and_log( f"""
+            Warning: chunk over max size. 
+            This chunk size: {this_chunk}. 
+            Max size: {max_chunk_size}
+            """ )
+            print_and_log( f"This chunk: {this_chunk}", this_epub_output_dir_path )
+            size_flag_ok = False
+
+    # report and log
+    if size_flag_ok:
+        print_and_log( "Size Check, OK \o/", this_epub_output_dir_path )
+    else:
+        print_and_log( "WARNING: Size Check Failed!", this_epub_output_dir_path )
+
+
+
 def save_individual_chunks(chunks_list, output_chunks_dir, chunk_source_name):
 
-      for index, this_chunk in enumerate(chunks_list):
-          chunk_name = f"{chunk_source_name}_{index}.txt"
+    for index, this_chunk in enumerate(chunks_list):
+        chunk_name = f"{chunk_source_name}_{index}.txt"
 
-          # Save individual txt files
-          individual_chunk_path = os.path.join(output_chunks_dir, chunk_name)
-          with open(individual_chunk_path, 'w') as f:
-              f.write(this_chunk)
-              # print('chunk writen', individual_chunk_path)
+        # Save individual txt files
+        individual_chunk_path = os.path.join(output_chunks_dir, chunk_name)
+        with open(individual_chunk_path, 'w') as f:
+            f.write(this_chunk)
+            # print('chunk writen', individual_chunk_path)
 
-      return len(chunks_list)
+    return len(chunks_list)
 
 
 def append_chunks_to_jsonl(chunks_list, output_chunks_jsonl_path, chunk_source_name):
@@ -120,21 +151,36 @@ def append_chunks_to_jsonl(chunks_list, output_chunks_jsonl_path, chunk_source_n
                 "source_name": f"{chunk_source_name}_{index}",
                 "text": this_chunk
             }
-            
+
             # Convert the chunk data to a JSON string and append it to the file with a newline
             f.write(json.dumps(chunk_data) + '\n')
 
     return len(chunks_list)
 
 
-def extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, output_whole_txt_path, output_txt_dir, output_chunks_jsonl_path, output_chunks_dir, chunk_size=500):
+def print_and_log(input_text, this_epub_output_dir_path):
+    # check if input is a string, if not...make it a string! 
+    if not isinstance(input_text, str):
+        input_text = str(input_text)
+
+    # print to terminal
+    print(input_text)
+
+    # log file path is...
+    log_file_path = os.path.join(this_epub_output_dir_path, "log.txt")
+
+    # log: Write/Append to a log.txt file
+    with open(log_file_path, 'a') as f:
+        f.write(input_text + '\n\n')
+
+
+def extract_text_from_epub(epub_file_path, this_epub_output_dir_path, output_jsonl_path, output_json_dir, output_whole_txt_path, output_txt_dir, output_chunks_jsonl_path, output_chunks_dir, max_chunk_size=500):
     with zipfile.ZipFile(epub_file_path, 'r') as epub:
-        print("EPUB Contents:", epub.namelist())
+        print_and_log(f"EPUB Contents: -> {epub.namelist()}", this_epub_output_dir_path)
 
-        opf_file = [f for f in epub.namelist() if 'content.opf' in f][0]
-        opf_content = epub.read(opf_file).decode('utf-8')
-
-        ordered_html_files = get_ordered_html_files(opf_content)
+        ###################
+        # Make Directories
+        ###################
 
         # Create a directory for individual JSON files
         if not os.path.exists(output_json_dir):
@@ -148,8 +194,26 @@ def extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, o
         if not os.path.exists(output_chunks_dir):
             os.makedirs(output_chunks_dir)
 
+
+        ##################################
+        # Get & Read html files from epub
+        ##################################
+        # find opf file
+        opf_file = [f for f in epub.namelist() if 'content.opf' in f][0]
+
+        # read opf file
+        opf_content = epub.read(opf_file).decode('utf-8')
+
+        # get ordered HTML files
+        ordered_html_files_list = get_ordered_html_files(opf_content)
+
+
+        ############################################
         # Read and extract text from each HTML file
-        for html_file in ordered_html_files:
+        ############################################
+
+        # iterate through html files
+        for html_file in ordered_html_files_list:
             full_path = os.path.join(os.path.dirname(opf_file), html_file)
             if full_path in epub.namelist():
                 html_content = epub.read(full_path).decode('utf-8')
@@ -157,16 +221,16 @@ def extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, o
                 #########################
                 # extract text from epub
                 #########################
-                raw_text = extract_text_from_html(html_content)
-                print(f"len(text for json)-> {len(raw_text)}")
+                raw_text = extract_text_from_html(html_content, this_epub_output_dir_path)
+                print_and_log(f"len(text for json)-> {len(raw_text)}", this_epub_output_dir_path)
 
                 # fix text formatting
                 text = fix_text_formatting(raw_text)
 
 
-                #######
-                # json
-                #######
+                #################
+                # .json & .jsonl
+                #################
 
                 # Write/Append to a single JSONL file
                 with open(output_jsonl_path, 'a') as f:
@@ -179,7 +243,7 @@ def extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, o
                     json.dump({'text': text.strip()}, f, indent=4)
 
                 #######
-                # txt
+                # .txt
                 #######
 
                 # Write/Append to a single text .txt file
@@ -192,22 +256,26 @@ def extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, o
                     f.write(text)
 
                 #########
-                # Chunks
+                # chunks
                 #########
 
-                chunks_list = make_chunk_list(text, chunk_size)
+                chunks_list = make_chunk_list(text, max_chunk_size, this_epub_output_dir_path)
 
                 chunk_source_name = os.path.splitext(html_file)[0]
 
+                # check sizes
+                check_len_chunks_in_list(chunks_list, max_chunk_size, this_epub_output_dir_path)
+
                 number_of_chunks = save_individual_chunks(chunks_list, output_chunks_dir, chunk_source_name)
-                print(f"Chunked: split into this many chunks-> {number_of_chunks}")
+                print_and_log(f"Chunked: split into this many chunks-> {number_of_chunks}", this_epub_output_dir_path)
 
                 append_chunks_to_jsonl(chunks_list, output_chunks_jsonl_path, chunk_source_name)
 
-                print(f"{html_file} -> ok!")
+                print_and_log(f"{html_file} -> ok!", this_epub_output_dir_path)
 
-            else:
-                print(f"Warning: File {full_path} not found in the archive.")
+
+            else:  # File Not Found
+                print_and_log(f"Warning: File {full_path} not found in the archive.")
 
 
 def zip_folder(path_to_directory_to_zip, output_destination_zip_file_path):
@@ -251,8 +319,8 @@ def split_sentences_and_punctuation(text):
     # Optionally, remove empty strings if they are not desired
     split_sentences_and_punctuation_list = [s for s in split_sentences_and_punctuation_list if s]
 
-    print("split_sentences_and_punctuation_list")
-    print(split_sentences_and_punctuation_list)
+    # print("split_sentences_and_punctuation_list")
+    # print(split_sentences_and_punctuation_list)
 
     return split_sentences_and_punctuation_list
 
@@ -358,48 +426,94 @@ def check_for_not(chunk, window_size=25):
     return False
 
 
-def make_chunk_list(text, chunk_size):
+def make_chunk_list(text, chunk_size, this_epub_output_dir_path):
     split_sentences_list = split_sentences_and_punctuation(text)
     chunk_list = chunk_text(split_sentences_list, chunk_size)
 
     for i in chunk_list:
         if not i:
-            print("error None in chunk_list: make_chunk_list()")
+            print_and_log("error None in chunk_list: make_chunk_list()")
 
-    print("len chunk list", len(chunk_list))
+    print_and_log(f"len chunk list -> {len(chunk_list)}", this_epub_output_dir_path)
 
     return chunk_list
 
 
-################
-# Example usage
-################
+######
+# Run
+######
 """
-1. have your source epub in the cwd and 
-2. change the value of epub_file_path to the name of your file
+1. add your epub files into the same current working directory as this script
+2. run script
+3. find the files in new folders per epub
 """
-epub_file_path = 'rustforrustaceans.epub' # Replace with your EPUB file path
+import glob
 
-# json
-output_jsonl_path = 'output.jsonl'
-output_json_dir = 'individual_jsons' # Directory to store individual JSON files
+# Get the current working directory.
+cwd = os.getcwd()
 
-# txt
-output_whole_txt_path = 'whole.txt'
-output_txt_dir = 'individual_txt' # Directory to store individual txt files
+# Search for all EPUB files in the current working directory.
+epub_files = glob.glob(os.path.join(cwd, "*.epub"))
 
-# chunks
-output_chunks_dir = 'chunk_text_files' # Directory to store individual txt files
+# Print the list of EPUB files.
+print(epub_files)
 
-output_chunks_jsonl_path = 'chunks_jsonl_all' # Directory to store individual txt files
 
-# run
-extract_text_from_epub(epub_file_path, output_jsonl_path, output_json_dir, output_whole_txt_path, output_txt_dir, output_chunks_jsonl_path, output_chunks_dir, chunk_size=500)
+####################
+# run for each epub
+####################
+for this_epub_file in epub_files:
 
-# Call the zip function
-zip_folder(output_json_dir, 'jsons_zip_archive')
-zip_folder(output_txt_dir, 'txt_zip_archive')
-zip_folder(output_chunks_dir, 'chunks_zip_archive')
+    # set target epub to first epub doc listed as being in the cwd
+    epub_file_path = this_epub_file
+
+    # make directory for this book
+    this_epub_output_dir_path = epub_file_path[:-5] + "_epub_folder"
+    print(this_epub_output_dir_path)
+
+    # Set the absolute path
+    this_epub_output_dir_path = os.path.abspath(this_epub_output_dir_path)
+
+    # Create a directory for individual txt files
+    if not os.path.exists(this_epub_output_dir_path):
+        os.makedirs(this_epub_output_dir_path)
+
+    # json
+    # output_jsonl_path = 'output.jsonl'
+    output_jsonl_path = os.path.join(this_epub_output_dir_path, 'output.jsonl')
+    output_json_dir = os.path.join(this_epub_output_dir_path, 'individual_jsons')  # Directory to store individual JSON files
+    output_json_zip_dir = os.path.join(this_epub_output_dir_path, 'jsons_zip_archive')  # Directory to store individual JSON files
+
+    # txt
+    output_whole_txt_path = os.path.join(this_epub_output_dir_path, 'whole.txt')
+    output_txt_dir = os.path.join(this_epub_output_dir_path, 'individual_txt')  # Directory to store individual txt files
+    output_txt_zip_dir = os.path.join(this_epub_output_dir_path, 'txt_zip_archive')  # Directory to store individual JSON files
+
+
+    # chunks
+    output_chunks_dir = os.path.join(this_epub_output_dir_path, 'chunk_text_files')  # Directory to store individual txt files
+    output_chunks_jsonl_path = os.path.join(this_epub_output_dir_path, 'chunks_jsonl_all')  # Directory to store individual txt files
+    output_chunks_zip_dir = os.path.join(this_epub_output_dir_path, 'chunks_zip_archive')  # Directory to store individual JSON files
+
+    extract_text_from_epub(epub_file_path,
+                           this_epub_output_dir_path, 
+                           output_jsonl_path, 
+                           output_json_dir, 
+                           output_whole_txt_path, 
+                           output_txt_dir, 
+                           output_chunks_jsonl_path, 
+                           output_chunks_dir, 
+                           max_chunk_size=500)
+
+
+    # Call the zip function
+    """
+    zip_folder(path_to_directory_to_zip, output_destination_zip_file_path)
+    """
+    zip_folder(output_json_dir, output_json_zip_dir)
+    zip_folder(output_txt_dir, output_txt_zip_dir)
+    zip_folder(output_chunks_dir, output_chunks_zip_dir)
+
 
 
 ```
