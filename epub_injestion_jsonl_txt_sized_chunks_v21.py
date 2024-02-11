@@ -3,6 +3,12 @@
 # esspecially for RAG document ingestion processing
 #########################################################
 """
+input -> one or more epub files
+output -> txt and json files that contain the text from sections of the book
+          as well as smart-chunked segments made to your size specs
+          e.g. a max of 500 characters, which contain whole sentences.
+          Chunks do not cut words or sentences in half. 
+
 # Set of Results, saved in a file per epub doc:
 1. One .jsonl file
 2. (Plural) Individual .json files in a folder
