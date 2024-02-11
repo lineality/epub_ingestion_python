@@ -14,6 +14,7 @@ e.g. Use epub books from Humble Bunbles in Retrieval Augmented Generation system
 3. One .txt text file of the whole epub
 4. Individual .txt files from separate parts of epub
 5. chunks under specified character length as separate text files
+6. chunks as one .jsonl file
 """
 
 import zipfile
