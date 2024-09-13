@@ -1845,7 +1845,7 @@ def add_source_attribution(source_attribution_string, directory="txt_pool"):
                     file.write(file_source_attribution_string)
 
 
-source_attribution_string = """\n(Source: Book: "Thinking into Character: A proven methodology for the creation of success and self-fulfilment" by Dr, Selva Pankaj, Regent Publishing 2019. """
+source_attribution_string = """ """
 
 add_source_attribution(source_attribution_string)
 
